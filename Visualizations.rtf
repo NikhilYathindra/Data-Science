@@ -1,0 +1,89 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1671\cocoasubrtf100
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 #Distribution of Ratings\
+distribution_of_ratings <- yelp_business_tbl %>% group_by(stars) %>% count()\
+ggplot(data=distribution_of_ratings, aes(x=cut(stars,c(0,0.9,1.9,2.9,3.9,5)), \
+                                         y=n,fill=cut(stars, c(0,0.9,1.9,2.9,3.9,5)))) + \
+  geom_bar(stat="identity") + scale_fill_brewer(palette = "YlOrRd") + \
+  labs(title = "Distribution of Ratings by Users", y = "Count of Users", \
+       x = "Star Category", fill = "Star Category") + theme(legend.position="none") +\
+  scale_x_discrete(labels=c("1.5","2.5","3.5","4.5"))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Correlation between price and ratings\
+ggplot(data=restaurants[!is.na(restaurants$`RestaurantsPriceRange2`),], aes(x=factor(`RestaurantsPriceRange2`), y=stars, color=factor(`RestaurantsPriceRange2`))) + \
+  geom_boxplot()+ labs(title = "Ratings vs Price Range", y = "Average Rating", x = "Price Range", fill = "Price Range") + scale_color_brewer(palette = "YlOrRd") + theme(legend.position="none")\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Where are all the 5-star restaurants located?\
+top_cities <- restaurants %>% filter(stars>=4) %>% group_by(city) %>% summarize(n=n()) %>% arrange(desc(n)) %>% head(8)\
+top_cities$longitude <- rep(0,length(top_cities$city))\
+top_cities$latitude <- rep(0,length(top_cities$city))\
+long_lat <- geocode(as.character(top_cities$city), source = "dsk")\
+top_cities$longitude <- long_lat[,1]\
+top_cities$latitude <- long_lat[,2]\
+\
+map1 <- leaflet(top_cities) %>% addTiles() %>% setView(lng = -96.503906, lat = 38.68551, zoom = 5) %>%\
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, weight = 0, radius=~n/100+10, fillOpacity = 0.7 , color="Orange" , popup = ~city) \
+map1\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#An interactive map of restaurants in Las Vegas with their average ratings indicated by color\
+binpal <- colorBin(c("Yellow", "Orange", "Red"), lv_restaurants$stars, 3, pretty = FALSE)\
+\
+map2 <- leaflet(lv_restaurants) %>% addProviderTiles("CartoDB.Positron") %>% \
+  addCircleMarkers(lng = ~longitude, lat = ~latitude, weight = 0, radius=5, fillOpacity = 0.7 , color = ~binpal(stars), popup = ~name) %>% \
+  addLegend("bottomleft", pal=binpal, values=stars, title = "Restaurants and their Average Ratings", labels=~binpal(stars),labFormat = labelFormat(prefix = ""), opacity = 0.7) \
+map2\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Word Clouds\
+build_word_cloud <- function(range)\
+\{\
+  if(range=="lower")\
+    wordcloud_restaurants <- lv_restaurants %>% filter(stars<2.5) %>% select(business_id,name)\
+  else\
+    wordcloud_restaurants <- lv_restaurants %>% filter(stars>4.5) %>%  select(business_id,name)\
+  wordcloud_restaurants_reviews <- lv_reviews %>% filter(business_id %in% wordcloud_restaurants$business_id) \
+  dir(wordcloud_restaurants_reviews$text)   \
+  docs <- Corpus(VectorSource(wordcloud_restaurants_reviews$text)) \
+  #Converting to lower case, removing stopwords, punctuation and numbers\
+  docs <- tm_map(docs, removePunctuation)    \
+  #docs <- tm_map(docs, removeNumbers)\
+  docs <- tm_map(docs, tolower)   \
+  docs <- tm_map(docs, removeWords, c(stopwords("english"),"s","ve"))  \
+  #docs <- tm_map(docs, PlainTextDocument)  \
+  #Term Document Matrix\
+  Ngrams <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 3))\
+  tdm <- TermDocumentMatrix(docs, control = list(tokenize = Ngrams))\
+  freq = sort(rowSums(as.matrix(tdm)),decreasing = TRUE)\
+  freq.df = data.frame(word=names(freq), freq=freq)\
+  wordcloud(freq.df$word,freq.df$freq,min.freq=5,max.words=150,random.order = F, colors=brewer.pal(8, "Dark2"))\
+\}\
+\
+#Word Cloud for Reviews of Restaurants with an average Rating of below 2.5\
+build_word_cloud("lower")\
+\
+#Word Cloud for Reviews of Restaurants with an average Rating of above 4.5\
+build_word_cloud("higher")\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#A Stacked Bar Chart of 20 Restaurants in Las Vegas with the highest number of reviews and a segmentation by Rating\
+restaurants_maximum_ratings <- lv_restaurants %>% arrange(desc(review_count)) %>% head(20) %>% select(business_id, name, review_count, Average_Rating=stars, neighborhood)\
+restaurants_maximum_ratings_data <- merge(restaurants_maximum_ratings, lv_reviews, by="business_id") %>% select(business_id, name, review_count, Average_Rating, stars, neighborhood)\
+ggplot(data = restaurants_maximum_ratings_data, aes(x = reorder(name, review_count), y = review_count, fill=as.factor(stars))) + coord_flip() +\
+  geom_bar(stat="identity") + labs(title = "Restaurants in Las Vegas with the maximum number of reviews", \
+                                   y = "Count of Reviews", x = "Restaurant Name", fill = "Rating") + scale_fill_brewer(palette = "YlOrRd") \
+\
+#-------------------------------------------------------------------------------------------------------------------\
+}

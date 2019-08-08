@@ -1,0 +1,204 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1671\cocoasubrtf100
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 #Show the values inside a list in the "categories" attribute of yelp_business_tbl\
+yelp_business_tbl %>% mutate(categories = as.character(categories)) %>% select(categories)\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Remove unnecessary variables like 'hours' and 'attributes'\
+yelp_business_tbl %>% select(-starts_with("hours"), -starts_with("attribute"))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Count the number of restaurants\
+yelp_business_tbl %>% select(-starts_with("hours"), -starts_with("attribute")) %>% \
+  filter(str_detect(categories, "Restaurant"))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Cross verifying the number of restaurants by selecting only the categories column\
+yelp_business_tbl %>% select(-starts_with("hours"), -starts_with("attribute")) %>%\
+  filter(str_detect(categories, "Restaurant")) %>%\
+  mutate(categories = as.character(categories)) %>% select(categories)\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Unnest a list\
+yelp_business_tbl %>% select(-starts_with("hours"), -starts_with("attribute")) %>% \
+  filter(str_detect(categories, "Restaurant")) %>% \
+  unnest(categories) %>% \
+  select(name, categories)\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Summarize using count\
+yelp_business_tbl %>% select(-starts_with("hours"), -starts_with("attribute")) %>%\
+  filter(str_detect(categories, "Restaurant")) %>%\
+  unnest(categories) %>%\
+  select(name, categories) %>%\
+  count(categories)\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Top Categories \
+yelp_business_tbl %>% select(-starts_with("hours"), -starts_with("attribute")) %>%\
+  filter(str_detect(categories, "Restaurant")) %>%\
+  unnest(categories) %>%\
+  select(name, categories) %>%\
+  count(categories) %>%\
+  arrange(desc(n))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Most common restaurant type per state\
+yelp_business %>% select(-starts_with("hours"), -starts_with("attribute")) %>%\
+  filter(str_detect(categories, "Restaurant")) %>%\
+  unnest(categories) %>%\
+  filter(categories != "Restaurants") %>%\
+  count(state, categories) %>%\
+  filter(n > 10) %>%\
+  group_by(state) %>%\
+  top_n(1, n)\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Marking missing values as NA\
+yelp_business_tbl[yelp_business_tbl==""] <- NA\
+sum(is.na(yelp_business_tbl))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Remove columns where all values are NA\
+NA_values <- is.na(yelp_business_tbl)\
+NA_Count <- apply(NA_values,2,sum)\
+NA_Count_df <- NA_Count[NA_Count==dim(yelp_business_tbl)[1]]\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+# Extracting only Restaurant information from the data_business data set\
+restaurants <- yelp_business[grepl('Restaurant',yelp_business_tbl$categories),]\
+\
+#The new data-set restaurants has the following dimensions\
+dim(restaurants)\
+\
+restaurants[restaurants==""] <- NA\
+sum(is.na(restaurants))\
+\
+NA_values <- is.na(restaurants)\
+NA_Count <- apply(NA_values,2,sum)\
+NA_Count_df <- NA_Count[NA_Count==dim(restaurants)[1]]\
+\
+#The following columns are irrelevant for restaurants and are completely empty\
+names(NA_Count_df)\
+restaurants <- subset(restaurants, select = !(c(names(restaurants)) %in% c(names(NA_Count_df))))\
+\
+# Cleaning up the Column Names of the Restaurant Data Set\
+names(restaurants) <- sapply(list(names(restaurants)),function(x) str_replace(x,"attributes.",""))\
+\
+# Final Restaurants Data Dimesnions and Attribute Names\
+dim(restaurants)\
+DT::datatable(as.data.frame(names(restaurants)))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+#Finding Restaurants only in Las Vegas\
+lv_restaurants <- restaurants %>% filter(city=="Las Vegas") \
+lv_restaurants <- flatten(lv_restaurants)\
+lv_restaurants_tbl <- as_data_frame(lv_restaurants)\
+\
+ggplot(data=restaurants[!is.na(restaurants$`RestaurantsPriceRange2`),], aes(x=factor(`RestaurantsPriceRange2`), y=stars, color=factor(`RestaurantsPriceRange2`))) + \
+  geom_boxplot()+ labs(title = "Ratings vs Price Range", y = "Average Rating", x = "Price Range", fill = "Price Range") + scale_color_brewer(palette = "YlOrRd") + theme(legend.position="none")\
+\
+DT::datatable(as.data.frame(names(restaurants)))\
+\
+#-------------------------------------------------------------------------------------------------------------------\
+\
+top_rated_categories <- restaurants %>% filter(stars==5) %>% select(name,categories)\
+docs <- Corpus(VectorSource(top_rated_categories$categories)) \
+\
+#Converting to lower case, removing stopwords, punctuation and numbers\
+docs <- tm_map(docs, removePunctuation)    \
+\
+#docs <- tm_map(docs, removeNumbers)\
+docs <- tm_map(docs, tolower)   \
+docs <- tm_map(docs, removeWords, c(stopwords("english"),"s","ve"))  \
+\
+#Term Document Matrix\
+Ngrams <- function(x) NGramTokenizer(x, Weka_control(min = 1, max = 3))\
+tdm <- TermDocumentMatrix(docs, control = list(tokenize = Ngrams))\
+freq = sort(rowSums(as.matrix(tdm)),decreasing = TRUE)\
+freq.df = data.frame(word=names(freq), freq=freq)\
+DT::datatable(as.data.frame(freq.df[3:18,]$word))\
+restaurants$DietaryRestrictions\
+\
+#Kid friendly restaurant\
+kid_friendly_city <- restaurants %>% filter(`GoodForKids`=="True") %>%  group_by(city) %>% summarise(count=n()) %>% arrange(desc(count)) %>% subset(city!='Karlsruhe')\
+DT::datatable(kid_friendly_city)\
+\
+# Reviews Data only for Restaurants \
+data_reviews_restaurant <- yelp_review_tbl[yelp_review_tbl$business_id %in% restaurants$business_id,]\
+\
+# Reviews Data only for Restaurants in Las Vegas\
+lv_restaurants <- restaurants %>% filter(city=="Las Vegas") %>% select(business_id)\
+lv_reviews <- data_reviews_restaurant[data_reviews_restaurant$business_id %in% lv_restaurants$business_id,]\
+\
+# The Final Reviews Data Dimensions and Attribute Names\
+dim(lv_reviews)\
+DT::datatable(as.data.frame(names(lv_reviews)))\
+\
+\
+# Extracting only Restaurant information from the data_business data set\
+restaurants <- yelp_business_tbl[grepl('Restaurant',yelp_business_tbl$categories),]\
+\
+#The new data-set restaurants has the following dimensions\
+dim(restaurants)\
+\
+# Marking missing values as NA\
+restaurants[restaurants==""] <- NA\
+sum(is.na(restaurants))\
+\
+# Removing columns where all the values are NA\
+NA_values <- is.na(restaurants)\
+NA_Count <- apply(NA_values,2,sum)\
+NA_Count_df <- NA_Count[NA_Count==dim(restaurants)[1]]\
+\
+#The following columns are irrelevant for restaurants and are completely empty\
+names(NA_Count_df)\
+restaurants <- subset(restaurants, select = !(c(names(restaurants)) %in% c(names(NA_Count_df))))\
+\
+# Cleaning up the Column Names of the Restaurant Data Set\
+names(restaurants) <- sapply(list(names(restaurants)),function(x) str_replace(x,"attributes.",""))\
+\
+# Final Restaurants Data Dimesnions and Attribute Names\
+dim(restaurants)\
+\
+DT::datatable(as.data.frame(names(restaurants)))\
+\
+#Finding Restaurants only in Las Vegas\
+lv_restaurants <- restaurants %>% filter(city=="Las Vegas") \
+\
+#Does the number of reviews provide us with sufficient information\
+\
+restaurants_maximum_ratings <- lv_restaurants %>% arrange(desc(review_count)) %>% head(20) %>% select(business_id, name, review_count, Average_Rating=stars, neighborhood)\
+restaurants_maximum_ratings_data <- merge(restaurants_maximum_ratings, lv_reviews, by="business_id") %>% select(business_id, name, review_count, Average_Rating, stars, neighborhood)\
+ggplot(data = restaurants_maximum_ratings_data, aes(x = reorder(name, review_count), y = review_count, fill=as.factor(stars))) + coord_flip() +\
+  geom_bar(stat="identity") + labs(title = "Restaurants in LasVegas with the maximum number of reviews", \
+                                   y = "Count of Reviews", x = "Restaurant Name", fill = "Rating") + scale_fill_brewer(palette = "YlOrRd") \
+\
+restaurants_maximum_ratings_percent <- restaurants_maximum_ratings_data %>% select(-business_id) %>% group_by(name, review_count, stars) %>% \
+  summarise(count=n()) %>% spread(stars,count) %>% arrange(desc(review_count)) %>% mutate(Star5_Percent=round(`5`/review_count*100,0), Star1_Percent=round(`1`/review_count*100,0)) \
+DT::datatable(restaurants_maximum_ratings_percent)\
+\
+#Which neighborhood houses the maximum number of 5-star rated restaurants?\
+best_neighborhood <- restaurants_maximum_ratings_data[restaurants_maximum_ratings_data$neighborhood!='[]',] %>% select(-c(business_id, name)) %>% group_by(neighborhood,stars) %>% \
+  summarise(count=n()) %>% spread(stars,count) %>% arrange(desc((`1`+`2`+`3`+`4`+`5`))) %>% mutate(Star5_Percent=round(`5`/(`1`+`2`+`3`+`4`+`5`)*100,0), Star1_Percent=round(`1`/(`1`+`2`+`3`+`4`+`5`)*100,0)) \
+DT::datatable(best_neighborhood)\
+\
+\
+\
+}
